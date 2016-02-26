@@ -1,0 +1,217 @@
+---
+# Common tasks from common.yml
+- name: Create /home/docker
+  file: path=/home/docker state=directory owner=root mode=755
+  ignore_errors: yes
+  tags: dockerregistry
+- name: Create work directory
+  file: path=/home/docker/work state=directory owner=root mode=755
+  ignore_errors: yes
+  tags: dockerregistry
+- name: copy etcdctl
+  copy: src=etcdctl dest=/usr/sbin/ mode=0755
+  tags: dockerregistry
+- name: copy jq
+  copy: src=jq dest=/usr/sbin/ mode=0755
+  tags: dockerregistry  
+- name: copy the rpm file
+  copy: src=iptables-services-1.4.21-13.el7.x86_64.rpm dest=/home/docker/work/ mode=0755
+  tags: dockerregistry
+- name: iptables pkg installed
+  command: rpm -q iptables-services
+  register: iptpresent
+  failed_when: iptpresent.rc >= 2
+  tags: dockerregistry
+- name: disable firewalld
+  command: systemctl mask firewalld
+  when: is_sysctl
+  tags: dockerregistry
+- name: disable firewalld
+  command: systemctl stop firewalld
+  when: is_sysctl
+  tags: dockerregistry
+- name: iptables install
+  command: rpm -i /home/docker/work/iptables-services-1.4.21-13.el7.x86_64.rpm
+  ignore_errors: yes
+  when: iptpresent.rc == 1
+  tags: dockerregistry
+- name: enable iptables
+  command: systemctl enable iptables
+  when: is_sysctl
+  tags: dockerregistry
+- name: start iptables
+  command: systemctl start iptables
+  when: is_sysctl
+  tags: dockerregistry
+- name: restart docker due to iptables restart
+  command: systemctl restart docker
+  when: is_sysctl
+  tags: dockerregistry
+
+# DockerRepo tasks
+- name: Creates directory...
+  file: path=/etc/httpd/certs state=directory owner=root mode=755
+  ignore_errors: yes
+  tags: dockerregistry
+- name: Creates directory...
+  file: path=/home/docker/prodRepo/data state=directory owner=root mode=755
+  ignore_errors: yes
+  tags: dockerregistry
+- name: Creates directory...
+  file: path=/home/docker/cloud-service-scripts state=directory owner=root mode=755
+  ignore_errors: yes
+  tags: dockerregistry
+- name: Creates directory...
+  file: path=/etc/docker/certs.d/dockerrepo:5000 state=directory owner=root mode=755
+  ignore_errors: yes
+  tags: dockerregistry
+
+- name: copy registry prereqs
+  copy: src={{ ansible_distribution|lower }}/{{ ansible_distribution_major_version }}/ dest=/home/docker/work mode=0755
+  tags: dockerregistry
+  ignore_errors: yes
+- name: install prereqs
+  shell: yum -y -q -t install /home/docker/work/*.rpm
+  ignore_errors: yes
+  tags: dockerregistry
+
+- name: install jmeter
+  copy: src=jmeter-2.13.tar dest=/home/docker/work mode=0755 owner=root
+  tags: dockerregistry
+- name: extra jmeter to /opt
+  command: tar -xvf /home/docker/work/jmeter-2.13.tar -C /opt
+  ignore_errors: yes
+  tags: dockerregistry
+
+- name: copy the docker registry start script file
+  copy: src=startDockerRegistry-2.1 dest=/home/docker/ mode=0755 owner=root
+  tags: dockerregistry
+
+- name: copy the checkRegistry script file
+  copy: src=checkRegistry dest=/usr/sbin/ mode=0755 owner=root
+  tags: dockerregistry
+
+- name: copy the get_docker_versions script file
+  copy: src=get_docker_versions.sh dest=/usr/sbin/ mode=0755 owner=root
+  tags: dockerregistry
+
+- name: copy the installService script file
+  copy: src=installService dest=/usr/sbin/ mode=0755 owner=root
+  tags: dockerregistry
+
+- name: copy the httpd/docker repo setup script
+  copy: src=setupDockerRepoEnv.sh dest=/home/docker/ mode=0755 owner=root
+  tags: dockerregistry
+
+- name: copy the docker registry tar ball
+  copy: src=registry-2.1.1.tar dest=/home/docker/docker_registry-2.1.1.tar mode=644 owner=root
+  tags: dockerregistry
+
+- name: copy httpd configuration files
+  copy: src=httpd.conf dest=/etc/httpd/conf/ mode=666 owner=root
+  tags: dockerregistry
+- name: copy httpd configuration files...
+  copy: src=docker.conf dest=/etc/httpd/conf.d/ mode=666 owner=root
+  tags: dockerregistry
+- name: copy httpd configuration files...
+  copy: src=ssl.conf dest=/etc/httpd/conf.d/ mode=666 owner=root
+  tags: dockerregistry
+
+- name: Make folder for certs
+  file: path=/home/docker/certs state=directory owner=root mode=755
+  tags: dockerregistry
+- name: Create self-signed certificate
+  command: openssl req -newkey rsa:4096 -nodes -sha256 -keyout /home/docker/certs/dockerrepo.key -x509 -days 365 -out /home/docker/certs/dockerrepo.crt -subj "/C=US/ST=PA/L=Horsham/O=ARRIS Group Inc./OU=119/CN=dockerrepo"
+  tags: dockerregistry
+- name: copy Certificate files to PKI location
+  command: cp /home/docker/certs/dockerrepo.crt /etc/pki/tls/certs/
+  tags: dockerregistry
+- name: copy Certificate files for HTTP server
+  command: cp /home/docker/certs/dockerrepo.key /etc/httpd/certs/
+  tags: dockerregistry
+- name: copy Certificate files for HTTP server...
+  command: cp /home/docker/certs/dockerrepo.crt /etc/httpd/certs/
+  tags: dockerregistry
+- name: Generate docker Certificate file
+  shell: sudo cat /home/docker/certs/dockerrepo.key /home/docker/certs/dockerrepo.crt > /home/docker/certs/ca.crt
+  tags: dockerregistry
+- name: copy Docker Certificate files...
+  command: cp /home/docker/certs/ca.crt /etc/docker/certs.d/dockerrepo:5000/
+  tags: dockerregistry
+
+- name: update /usr/lib/systemd/system/docker.service
+  command: sed -i --file=/home/docker/work/updateDockerService.sed /usr/lib/systemd/system/docker.service
+  when: is_sysctl
+  tags: dockerregistry
+
+- name: update /usr/lib/systemd/system/httpd.service
+  command: sed -i --file=/home/docker/work/updateHttpdService.sed /usr/lib/systemd/system/httpd.service
+  when: is_sysctl
+  tags: dockerregistry
+
+- name: Update local files for dockerrepo hostname
+  command: hostname dockerrepo
+  tags: dockerregistry
+- name: hostname - v7
+  command: hostnamectl set-hostname dockerrepo
+  when: is_sysctl
+  tags: dockerrepo
+- name: hostname - v7 part 2
+  command: systemctl restart systemd-hostnamed
+  when: is_sysctl
+  tags: dockerrepo
+- name: /etc/hostname
+  shell: echo "dockerrepo" > /etc/hostname
+  when: is_sysctl
+  tags: dockerrepo
+- name: /etc/hosts
+  shell: echo "{{ansible_eth0.ipv4.address}}  dockerrepo" >> /etc/hosts
+  tags: dockerrepo
+- name: /etc/sysconfig/network
+  command: sed -i "s/HOSTNAME=.*/HOSTNAME=dockerrepo/" /etc/sysconfig/network
+  tags: dockerrepo
+
+- name: reload systemctl daemon 
+  command: systemctl --type=service daemon-reload
+  when: is_sysctl
+  tags: dockerregistry
+
+- name: stop the httpd service
+  service: name=httpd state=stopped
+  when: is_service
+  tags: dockerregistry
+
+- name: start the httpd service
+  service: name=httpd state=restarted
+  when: is_service
+  tags: dockerregistry
+
+- name: start the httpd system
+  shell: systemctl --type=service restart httpd
+  when: is_sysctl
+  tags: dockerregistry
+
+- name: set the start-state for service docker
+  shell: chkconfig --level 12345 docker on
+  when: is_service
+  tags: dockerregistry
+
+- name: set the start-state for service httpd
+  shell: chkconfig --level 12345 httpd on
+  when: is_service
+  tags: dockerregistry
+
+- name: set the start-state for sysctl docker
+  shell: systemctl enable docker.service
+  when: is_sysctl
+  tags: dockerregistry
+
+- name: set the start-state for sysctl httpd
+  shell: systemctl enable httpd.service
+  when: is_sysctl
+  tags: dockerregistry
+
+- name: start the docker registry
+  shell: /home/docker/startDockerRegistry-2.1
+  tags: dockerregistry
+

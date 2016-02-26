@@ -1,0 +1,85 @@
+---
+- name: copy etcdctl
+  copy: src=etcdctl dest=/usr/sbin/ mode=0755
+  tags: common
+- name: copy jq
+  copy: src=jq dest=/usr/sbin/ mode=0755
+  tags: common  
+- name: copy the disk resize script file
+  copy: src=resize_disk.sh dest=/usr/sbin/ mode=0755
+  tags: common
+- name: resize the disk on VM
+  shell: /usr/sbin/resize_disk.sh
+  tags: common
+  ignore_errors: true
+
+- name: reboot the disk on VM
+  shell: shutdown -r +1
+  tags: common
+  async: 0
+  poll: 0
+  ignore_errors: true
+- name: Waiting for hosts to come back
+  local_action: wait_for host={{ inventory_hostname }}
+    state=started
+    port=22
+    delay=60
+    timeout=300
+    connect_timeout=15
+  sudo: false
+  tags: common
+
+- name: final resize the disk on AWS VM
+  shell: sudo xfs_growfs /dev/xvda3
+  tags: common
+  ignore_errors: true
+
+- name: final resize the disk on VM
+  shell: sudo xfs_growfs /dev/sda3
+  tags: common
+  ignore_errors: true
+
+- name: copy status_checker init script
+  copy: src=status_checkers dest=/etc/rc.d/init.d/status_checkers mode=0755
+  tags: common
+- name: enable status_checkers service
+  service: name=status_checkers enabled=yes
+  tags: common
+- name: Creates directory
+  file: path=/arris/compose state=directory mode=0755
+  tags: common
+#name: fix firewall 
+- name: copy the rpm file
+  copy: src=iptables-services-1.4.21-13.el7.x86_64.rpm dest=/usr/sbin/ mode=0755
+  tags: common
+- name: iptables pkg installed
+  command: rpm -q iptables-services
+  register: iptpresent
+  failed_when: iptpresent.rc >= 2
+  tags: common
+- name: disable firewalld
+  command: systemctl mask firewalld
+  when: is_sysctl
+  tags: common
+- name: disable firewalld
+  command: systemctl stop firewalld
+  when: is_sysctl
+  tags: common
+- name: iptables install
+  command: rpm -i /usr/sbin/iptables-services-1.4.21-13.el7.x86_64.rpm
+  ignore_errors: yes
+  when: iptpresent.rc == 1
+  tags: common
+- name: enable iptables
+  command: systemctl enable iptables
+  when: is_sysctl
+  tags: common
+- name: start iptables
+  command: systemctl start iptables
+  when: is_sysctl
+  tags: common
+- name: restart docker due to iptables restart
+  command: systemctl restart docker
+  when: is_sysctl
+  tags: common
+

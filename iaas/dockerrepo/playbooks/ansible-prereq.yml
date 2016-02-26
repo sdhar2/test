@@ -1,0 +1,28 @@
+---
+# run playbook with -k and -e for repo_id and path_to_files
+#example -e "repo_ip=10.10.35.166 path_to_files=service-scripts/playbooks/roles/ansible/files"
+- name: add ssh key
+  hosts: acp
+  sudo: yes
+  tags: ssh
+  vars:
+  - repo_ip: dockerrepo
+  - path_to_files: service-scripts/playbooks/roles/ansible/files
+  roles:
+     - ansible
+
+- include: genandcopykey.yml
+
+- name: cleanup plays
+  hosts: acp
+  sudo: yes
+  tags:
+    - clean
+    - common
+    - docker
+    
+- include: docker.yml
+- include: docker-cert.yml
+- include: cleanup.yml pass=1
+- include: common.yml
+- include: cleanup.yml pass=2

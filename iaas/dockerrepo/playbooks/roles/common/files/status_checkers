@@ -1,0 +1,89 @@
+#!/bin/bash
+####################################################################################
+#Copyright 2015 ARRIS Enterprises, Inc. All rights reserved.
+#This program is confidential and proprietary to ARRIS Enterprises, Inc. (ARRIS),
+#and may not be copied, reproduced, modified, disclosed to others, published or used,
+#in whole or in part, without the express prior written permission of ARRIS.
+####################################################################################
+#       /etc/rc.d/init.d/status_checkers.sh
+#
+# chkconfig: 345 99 01
+# description: sets a number of sysctl parameters needed for video server use
+#
+# Source function library
+. /etc/rc.d/init.d/functions
+
+# This hard coded list could be replaced with a discovered list if needed
+scripts="
+/usr/sbin/pgpool_status_checker.sh
+/usr/sbin/postgres_status_checker.sh
+/usr/sbin/nginx_status_checker.sh
+/usr/sbin/rmq_status_checker.sh
+/usr/sbin/haproxy_status_checker.sh
+/usr/sbin/etcd_status_checker.sh
+/usr/sbin/cdc_status_checker.sh
+/usr/sbin/zookeeper_status_checker.sh
+/usr/sbin/startConfd.sh
+/usr/sbin/rebootPostgresDaemon.sh
+"
+
+# this code is general.  Any script that needs to be run on restart can be
+# added to the list
+start() {
+  for p in $scripts; do
+    if [ -x $p ]; then
+      pgrep $p
+      if [ $? -ne 0 ]; then
+        setsid $p &
+      fi
+    fi
+  done
+  RETVAL=0
+  return $RETVAL
+}
+
+stop() {
+  for p in $scripts; do
+    if [ -x $p ]; then
+      pkill $p &>/dev/null
+    fi
+  done
+  RETVAL=0
+  return $RETVAL
+}
+
+restart() {
+  stop
+  sleep 3
+  start
+  RETVAL=0
+  return $RETVAL
+}
+
+status() {
+  echo "Status Checker Scripts running status"
+  for p in $scripts; do
+    if [ -x $p ]; then
+      echo -n "$p "
+      pgrep $p &>/dev/null
+      if [ $? -eq 0 ]; then
+        echo "[running]"
+      else
+        echo "[stopped]"
+      fi
+    fi
+  done
+  echo
+  RETVAL=0
+  return $RETVAL
+}
+
+case "$1" in
+  start) start ;;
+  stop) stop ;;
+  restart) restart ;;
+  status) status ;;
+  *) echo $"Usage: $0 {start|stop|restart|status}"; exit 1 ;;
+esac
+
+exit $RETVAL

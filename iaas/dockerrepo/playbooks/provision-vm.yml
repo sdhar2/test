@@ -1,0 +1,4 @@
+- include: aws_check.yml
+- include: get-hostkeys.yml
+- include: ansible-prereq.yml
+

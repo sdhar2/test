@@ -1,0 +1,11 @@
+---
+- name: check if aws deployment
+  hosts: acp
+  vars_prompt:
+   - name: "AWS"
+     prompt: "Is this an Amazon Web Services deployment (n/Y)?"
+     default: "n"
+     private: no
+  tasks:
+    - set_fact:
+        AWS : "{{AWS}}"

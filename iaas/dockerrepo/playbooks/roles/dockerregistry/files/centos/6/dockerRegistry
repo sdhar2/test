@@ -1,0 +1,28 @@
+#!/bin/sh
+#
+#       /etc/rc.d/init.d/dockerRegistry
+#
+######################################################################################
+# Copyright 2009-2014 ARRIS Enterprises, Inc. All rights reserved.
+# This program is confidential and proprietary to ARRIS Enterprises, Inc. (ARRIS),
+# and may not be copied, reproduced, modified, disclosed to others, published
+# or used, in whole or in part, without the express prior written permission of ARRIS.
+######################################################################################
+#
+# description: Start Docker Registry
+#
+# chkconfig: 2345 96 00
+#
+
+# Source function library.
+. /etc/init.d/functions
+
+prog="registry:2.1"
+exec="/home/docker/startDockerRegistry-2.1"
+logfile=/home/docker/logs/dockerRegistry
+
+printf "Starting $prog:\t"
+echo "\n$(date)\n" >> $logfile
+$exec &>> $logfile &
+
+exit $?

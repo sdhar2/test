@@ -1,0 +1,155 @@
+---
+- name: docker pkg installed
+  command: rpm -q docker-engine-1.8.2
+  register: present
+  changed_when: present.rc == 1
+  failed_when: present.rc >= 2
+  tags: docker
+
+- name: docker-io pkg erase
+  command: rpm -e docker-io
+  when: present.rc == 1
+  ignore_errors: yes
+  tags: docker
+- name: docker-io yum pkg erase
+  command: sudo yum -y erase docker-io
+  when: present.rc == 1
+  ignore_errors: yes
+  tags: docker
+
+- name: docker pkg erase
+  command: rpm -e docker
+  when: present.rc == 1
+  ignore_errors: yes
+  tags: docker
+- name: docker yum pkg erase
+  command: sudo yum -y erase docker
+  when: present.rc == 1
+  ignore_errors: yes
+  tags: docker
+
+- name: docker-engine.1.7.1 pkg erase
+  command: rpm -e sudo rpm -e docker-engine-1.7.1
+  ignore_errors: yes
+  when: present.rc == 1
+  tags: docker
+- name: docker yum pkg erase
+  command: sudo yum -y erase docker-engine-1.7.1
+  when: present.rc == 1
+  ignore_errors: yes
+  tags: docker
+
+- name: Creates directory
+  file: path=/tmp/docker state=directory
+  ignore_errors: yes
+  tags: docker
+- name: docker copy prereqs
+  copy: src={{ ansible_distribution|lower }}/{{ ansible_distribution_major_version }}/docker_prereq.tar dest=/tmp/docker/ mode=0755
+  tags: docker
+  ignore_errors: yes
+- name: docker prep prereqs
+  command: tar -xvf /tmp/docker/docker_prereq.tar -C /tmp/docker
+  ignore_errors: yes
+  tags: docker
+- name: docker install prereqs
+  shell: yum -y -q -t install /tmp/docker/*.rpm
+  ignore_errors: yes
+  tags: docker
+
+- name: copy the docker file
+  copy: src={{ ansible_distribution|lower }}/{{ ansible_distribution_major_version }}/docker.rpm dest=/usr/sbin/ mode=0755
+  tags: docker
+
+- name: rpm install docker
+  command: rpm -i /usr/sbin/docker.rpm
+  ignore_errors: yes
+  tags: docker
+
+- name: remove static token
+  command: rm -f /etc/docker/key.json
+  tags: docker
+
+- name: copy the compose file
+  copy: src={{ ansible_distribution|lower }}/{{ ansible_distribution_major_version }}/docker-compose dest=/usr/sbin/docker-compose mode=0755
+  tags: docker
+
+- name: create compose directory
+  command: mkdir -p /arris/etcd_node_deployed
+  ignore_errors: true
+
+- name: update /etc/sysconfig/docker
+  copy: src=sysconfig-docker dest=/etc/sysconfig/docker mode=0644
+  when: is_service
+  tags: docker
+- name: update /usr/lib/systemd/system/docker.service
+  copy: src=system-docker dest=/usr/lib/systemd/system/docker.service mode=0644
+  when: is_sysctl
+  tags: docker
+
+- name: reload systemctl daemon 
+  command: systemctl --type=service daemon-reload
+  when: is_sysctl
+  tags: docker
+
+- name: stop the docker service
+  service: name=docker state=stopped
+  when: is_service
+  tags: docker
+
+- name: start the docker service
+  service: name=docker state=restarted
+  when: is_service
+  tags: docker
+
+- name: start the docker system
+  shell: systemctl --type=service restart docker
+  when: is_sysctl
+  tags: docker
+
+- name: set the start-state for service docker
+  shell: chkconfig --level 12345 docker on
+  when: is_service
+  tags: docker
+
+- name: set the start-state for sysctl docker
+  shell: systemctl enable docker
+  when: is_sysctl
+  tags: docker
+
+- name: find default entry
+  shell: grep unlimited /etc/security/limits.conf | wc -l
+  register: status
+  tags: docker
+
+- name: open the file
+  command:  chmod 666 /etc/security/limits.conf
+  when: status.stdout == "0"
+  tags: docker
+
+- name: copy the limit file
+  copy: src=limits.conf dest=/etc/security/limits.conf mode=0644
+  tags: docker
+
+- name: close the file
+  command:  chmod 644 /etc/security/limits.conf
+  when: status.stdout == "0"
+  tags: docker
+
+- name: find sysctl.conf entry
+  shell: grep "fs.file-max = 65536" /etc/sysctl.conf | wc -l
+  register: sysstatus
+  tags: docker
+
+- name: set sysctl.conf limits
+  command:  echo "fs.file-max = 65536" >> /etc/sysctl.conf
+  when: sysstatus.stdout == "0"
+  tags: docker
+
+- name: setup nsenter
+  command: cp -f /usr/bin/nsenter /usr/local/bin/nsenter
+  ignore_errors: yes
+  tags: docker
+
+- name: setup enter.sh
+  copy: src=enter.sh dest=/usr/sbin/enter.sh mode=0755
+  tags: docker

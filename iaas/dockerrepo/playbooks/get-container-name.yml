@@ -1,0 +1,12 @@
+---
+- hosts: acp
+  sudo: true
+  gather_facts: true
+
+  tasks:
+    - name: get all running containers
+      shell: docker ps > /tmp/{{ ansible_hostname }}.out
+      register: run
+
+    - fetch: src=/tmp/{{ ansible_hostname }}.out  dest=./{{ ansible_hostname }} flat=yes
+

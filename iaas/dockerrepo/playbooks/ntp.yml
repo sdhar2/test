@@ -1,0 +1,14 @@
+---
+- name: Deploy ntp prereqs on all acp hosts 
+  hosts: acp
+  vars:
+    is_centos: "'{{ ansible_distribution|lower }}' == 'centos'"
+    is_redhat: "'{{ ansible_distribution|lower }}' == 'redhat' or '{{ ansible_distribution|lower }}' == 'red hat enterprise linux'"
+    is_ubuntu: "'{{ ansible_distribution|lower }}' == 'ubuntu'"
+    is_debian: "'{{ ansible_distribution|lower }}' == 'debian'"
+    is_service: "'{{ ansible_distribution_major_version }}' == '6'"
+    is_sysctl: "'{{ ansible_distribution_major_version }}' == '7'"
+  sudo: yes
+  sudo_user: root
+  roles:
+     - ntp

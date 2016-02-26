@@ -1,0 +1,9 @@
+---
+- name: rpm check
+  command: rpm -q libselinux-python
+  register: present
+  changed_when: present.rc == 1
+  failed_when: present.rc >=2
+- name: rpm install prereqs
+  command: rpm -i http://{{repo_ip}}/{{path_to_files}}/{{ ansible_distribution|lower }}/{{ ansible_distribution_major_version }}/libselinux-python.rpm
+  when: present.rc == 1

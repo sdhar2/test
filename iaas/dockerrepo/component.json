@@ -1,0 +1,9 @@
+[
+	{
+        "componentName":    "dockerRepository",
+        "componentDescr":   "ARRIS Cloud Platform: Docker Repository",
+        "containerName":    "",
+        "componentVersion": "1.0.0",
+        "installFileBase":  "arrs-cloud-iaas-dockerRepository"
+	}
+]

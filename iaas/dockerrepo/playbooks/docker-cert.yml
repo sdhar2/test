@@ -1,0 +1,14 @@
+---
+- name: install docker repo cert on client
+  hosts: acp
+  sudo: yes
+  sudo_user: root
+  tags: repocert
+  tasks:
+    - name: make dest directory
+      file: dest=/etc/docker/certs.d/dockerrepo\:5000 state=directory mode=0755 owner=root group=root
+      tags: repocert
+    - name: copy docker cert
+      copy: src=/etc/docker/certs.d/dockerrepo:5000/ca.crt dest=/etc/docker/certs.d/dockerrepo:5000/ca.crt owner=root group=root mode=0644
+      tags: repocert
+      

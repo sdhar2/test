@@ -1,0 +1,18 @@
+#!/bin/bash
+#
+######################################################################################
+# Copyright 2015 ARRIS Enterprises, Inc. All rights reserved.
+# This program is confidential and proprietary to ARRIS Enterprises, Inc. (ARRIS), 
+# and may not be copied, reproduced, modified, disclosed to others, published 
+# or used, in whole or in part, without the express prior written permission of ARRIS.
+######################################################################################
+#
+# start the 2.1 docker registry on port 5000 = no authentication
+# apache listening on https:5000 Proxy to localhost 5000
+# secure registry
+#
+prod=registry
+ver=2.1.1
+docker load --input /home/docker/docker_${prod}-${ver}.tar
+docker run -d --privileged=true -e GUNICORN_OPTS="[--preload]" -p 127.0.0.1:5000:5000 --restart=always -v /home/docker/prodRepo/data:/var/lib/registry --name docker-registry ${prod}:${ver}
+#docker run -d --privileged=true -e GUNICORN_OPTS="[--preload]" -p 127.0.0.1:5000:5000 --restart=always -v /home/docker/certs:/certs -e REGISTRY_HTTP_TLS_CERTIFICATE=/certs/dockerrepo.crt -e REGISTRY_HTTP_TLS_KEY=/certs/dockerrepo.key -v /home/docker/prodRepo/data:/tmp/registry-dev --name docker-registry ${prod}:${ver}

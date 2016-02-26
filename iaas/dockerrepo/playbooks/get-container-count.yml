@@ -1,0 +1,18 @@
+---
+- hosts: acp
+  sudo: true
+  gather_facts: false
+
+  tasks:
+    - name: get running containers
+      shell: docker ps -q | wc -l 
+      register: running
+      
+    - name: get all containers
+      shell: docker ps -qa | wc -l
+      register: all
+
+    - name: Display container counts
+      debug: msg="Running containers={{ running.stdout }} All={{ all.stdout }}"
+      failed_when: running.stdout != all.stdout
+

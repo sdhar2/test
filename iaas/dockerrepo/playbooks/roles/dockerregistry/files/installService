@@ -1,0 +1,541 @@
+#!/bin/bash
+#
+# installService - Install ACP Service release ZIP bundle
+#
+#   Usage:
+#       installService [-r] [ ZIPFile1 [ZIPFile2] ... ]
+#	
+###########
+#
+#	04/02/15 - DML - initial development
+#       05/01/15 - DML - Add logic for version.xml and removing the previous
+#                           instance of the minor version
+#       05/14/15 - DML - Add logic to move performance monitor XML files to
+#                           proper location when service is installed
+#       05/29/15 - DML - Add logic to handle installation of ITs in distribution
+#	06/10/15 - DML - Fix issue with new version of docker requiring -f option
+#			    when tagging image which already exists to overwrite it
+#       07/28/15 - DML - Add support for Ansible script installation into playbooks
+#                           directory
+#                        Fix logic moving attribution data
+#                        Add logic to handle certificate files
+#                        Handle case of MonaaS not being installed and still have
+#                           perfMon file
+#       08/18/15 - DML - Move IT tests down into playbooks directory and update
+#                           handling of certificate files and what is being copied
+#                           into the destination directories
+#       08/19/15 - DML - Change logic for integration tests to handle new service
+#                           specific JMeter tests instead of old scripts
+#       08/20/15 - DML - Updates to certificate and IT packaging
+#       08/25/15 - DML - Remove all version.xml/powercli support from installation
+#                           process
+#       08/26/15 - DML - Fix folder mismatch for certificate conf files
+#                           Restore code inadvertently removed
+#       08/28/15 - DML - Add copying of ancillary files from advisorServer/keys
+#                           directory
+#       10/12/15 - DML - Support ACP 2.0 changes - more files at service level
+#       11/13/15 - DML - Add support for docs directory in installation files
+#       11/16/15 - DML - Add special check for DNS container and copy it to 
+#                           its proper roles location instead of loading into
+#                           the Docker Registry
+#       12/09/15 - DML - Add support for ACP API certificate files
+#       12/16/15 - DML - Add logic to remove the container images after they are
+#                           pushed to the docker registry
+#       01/19/16 - DML - Add umask setting to ensure we have proper permissions
+#                           for all users of script
+# 
+######################################################################################
+# Copyright 2015 ARRIS Enterprises, Inc. All rights reserved.
+# This program is confidential and proprietary to ARRIS Enterprises, Inc. (ARRIS),
+# and may not be copied, reproduced, modified, disclosed to others, published
+# or used, in whole or in part, without the express prior written permission of ARRIS.
+######################################################################################
+
+DOCKER_REGISTRY="dockerrepo:5000"
+DOCKER_HOME_SCRIPTS="/home/docker/cloud-service-scripts"
+CP_COMMAND="cp --recursive --force "
+CURR_DIR=$PWD
+REMOVE_OLD=0
+perfMonTemp="${CURR_DIR}/perfMon"
+declare -a fileList
+
+# Set default permissions of new folders/files to 775 for script execution
+umask 002
+
+# Determine whether old versions should be removed when installing the current
+if [[ "$1" == "-r" ]]; then
+    REMOVE_OLD=1
+    shift
+fi
+
+# Get list of Services to install
+if [[ "$1" != "" ]]; then
+    fileList=$*
+else
+    fileList=*.zip
+fi
+
+# Make needed directories if necessary
+eval "sudo mkdir -p ${DOCKER_HOME_SCRIPTS}/attribution"
+eval "sudo mkdir -p ${DOCKER_HOME_SCRIPTS}/playbooks/roles"
+eval "sudo mkdir -p ${DOCKER_HOME_SCRIPTS}/playbooks/IT"
+eval "sudo mkdir -p ${DOCKER_HOME_SCRIPTS}/docs"
+eval "sudo mkdir -p ${DOCKER_HOME_SCRIPTS}/certificates/ELK/curator"
+eval "sudo mkdir -p ${DOCKER_HOME_SCRIPTS}/certificates/ELK/keys"
+eval "sudo mkdir -p ${DOCKER_HOME_SCRIPTS}/certificates/ELK/install"
+eval "sudo mkdir -p ${DOCKER_HOME_SCRIPTS}/certificates/ELK/ldap-config"
+eval "sudo mkdir -p ${DOCKER_HOME_SCRIPTS}/certificates/ELK/logstash-config"
+eval "sudo mkdir -p ${DOCKER_HOME_SCRIPTS}/certificates/LSF/conf"
+eval "sudo mkdir -p ${DOCKER_HOME_SCRIPTS}/certificates/LSF/keys"
+eval "sudo mkdir -p ${DOCKER_HOME_SCRIPTS}/certificates/LSF/install"
+eval "sudo mkdir -p ${DOCKER_HOME_SCRIPTS}/certificates/ACPAPI/install"
+eval "sudo mkdir -p ${DOCKER_HOME_SCRIPTS}/certificates/ACPAPI/keys"
+eval "sudo mkdir -p ${DOCKER_HOME_SCRIPTS}/certificates/advisorServer/conf"
+eval "sudo mkdir -p ${DOCKER_HOME_SCRIPTS}/certificates/advisorServer/keys"
+eval "sudo mkdir -p ${DOCKER_HOME_SCRIPTS}/certificates/appObserver/conf"
+eval "sudo mkdir -p ${DOCKER_HOME_SCRIPTS}/certificates/appObserver/keys"
+eval "sudo mkdir -p ${DOCKER_HOME_SCRIPTS}/certificates/appObserver/install"
+
+#
+# Update sevice version file with the one indicated in the function call and
+#   update the version.xml file with the proper version for the service
+#
+updateServiceVersion ()
+{
+    service=$1
+    version=$2
+
+    eval "sudo echo '{' > ${DOCKER_HOME_SCRIPTS}/${service}/${service}.json"
+    eval "sudo echo '    \"${service}Version\":' >> ${DOCKER_HOME_SCRIPTS}/${service}/${service}.json"
+    eval "sudo echo '    {' >> ${DOCKER_HOME_SCRIPTS}/${service}/${service}.json"
+    eval "sudo echo '        \"serviceVersion\": \"${version}\"' >> ${DOCKER_HOME_SCRIPTS}/${service}/${service}.json"
+    eval "sudo echo '    }' >> ${DOCKER_HOME_SCRIPTS}/${service}/${service}.json"
+    eval "sudo echo '}' >> ${DOCKER_HOME_SCRIPTS}/${service}/${service}.json"
+    return 0
+}
+
+#
+# Install the contents of a component ZIP file:
+#   Load docker tar image into the dockerrepo registry
+#   Copy the attribution information into the attribution folder
+#   Copy performance monitor XML files to temp location for later move
+#   Copy ansible files into the playbooks folder
+#   Copy the VM scripts into their proper location
+#
+installComponentFile ()
+{
+    componentFile=$1
+    copyDestDir=$2
+    copyAttr=$3
+
+    echo "=> Processing contents of ${componentFile}"
+    # Create the work directory, go there and remove any garbage already there
+    eval "sudo mkdir -p work; cd work; sudo rm -rf *"
+    RET=$?
+    if [[ $RET -ne 0 ]]
+    then
+        echo "Error: Unable to create/clean work directory."
+        exit $RET
+    fi
+
+    # Unzip the file
+    echo "==> Unzipping ${componentFile} into work directory"
+    eval "sudo unzip ../${componentFile}"
+    RET=$?
+    if [[ $RET -ne 0 ]]
+    then
+        echo "Error: Unable to unzip ${componentFile}."
+        exit $RET
+    fi
+
+    # Load the docker image into Cache using docker load
+    for TAR_FILE in *.tar
+    do
+        if [[ "${TAR_FILE}" != "*.tar" ]]; then
+            IFS="_"; declare -a TAG_AND_VERSION=($TAR_FILE); IFS=""
+            if [[ "${TAG_AND_VERSION[2]}" == "" ]]; then
+                # Handle care where there is no user associated with the container
+                DOCKER_TAG="${TAG_AND_VERSION[0]}"
+                DOCKER_VERSION=`echo ${TAG_AND_VERSION[1]} | sed -e "s/.tar//"`
+            else
+                DOCKER_TAG="${TAG_AND_VERSION[0]}/${TAG_AND_VERSION[1]}"
+                DOCKER_VERSION=`echo ${TAG_AND_VERSION[2]} | sed -e "s/.tar//"`
+            fi
+            echo "          Docker container tag: ${DOCKER_TAG}"
+            echo "          Docker container version: ${DOCKER_VERSION}"
+
+            if [[ "${DOCKER_TAG}" == "arrs/arrs-cloud-base-bind-dns" ]]; then
+                ROLES_DIR=`find . -type d -print | grep "roles/dns/files"`
+                if [[ "${ROLES_DIR}" != "" ]]; then
+                    eval "sudo cp ${TAR_FILE} ${ROLES_DIR}"
+                    RET=$?
+                    if [[ $RET -ne 0 ]]
+                    then
+                        echo "Error: Failed to copy tar bundle to files directory."
+                        exit $RET
+                    fi
+                else
+                    echo "Error: Failed to find files directory to copy tar bundle to."
+                    exit 128
+                fi
+            else
+                RAW_NAME_VERSION="${DOCKER_TAG}:${DOCKER_VERSION}"
+                LOCAL_NAME_VERSION="${DOCKER_REGISTRY}/${RAW_NAME_VERSION}"
+
+                echo "======> Loading '${RAW_NAME_VERSION}' image from file '${TAR_FILE}'"
+                eval "sudo docker load --input ${TAR_FILE}"
+                RET=$?
+                if [[ $RET -ne 0 ]]
+                then
+                    echo "Error: Image load failed."
+                    exit $RET
+                fi
+
+                # Tag image and push new tag into the local registry
+                echo "======> Creating tag '${LOCAL_NAME_VERSION}' for image '${RAW_NAME_VERSION}'"
+                eval "sudo docker tag -f ${RAW_NAME_VERSION} ${LOCAL_NAME_VERSION}"
+                RET=$?
+                if [[ $RET -ne 0 ]]
+                then
+                    echo "Error: Image tag failed."
+                    exit $RET
+                fi
+
+                echo "======> Pushing '${LOCAL_NAME_VERSION}' into the local registry"
+                eval "sudo docker push ${LOCAL_NAME_VERSION}"
+                RET=$?
+                if [[ $RET -ne 0 ]]
+                then
+                    echo "Error: Image push failed."
+                    exit $RET
+                fi
+
+
+                echo "======> Cleaning up '${RAW_NAME_VERSION}' container images"
+                eval "sudo docker rmi ${RAW_NAME_VERSION} ${LOCAL_NAME_VERSION}"
+                RET=$?
+                if [[ $RET -ne 0 ]]
+                then
+                    echo "Error: Image cleanup failed."
+                fi
+            fi
+            echo ""
+        fi
+    done
+
+    # Copy VM scripts to destination directory
+    for DIR in *
+    do
+        if [[ -d ${DIR} ]]; then
+            # First, move attribution data to root location and then take care of the
+            #   root folder
+            for attributionDir in `find $DIR -name attribution -type d`
+            do
+                echo "====> Copying directory ${attributionDir} contents to ${copyDestDir}/attribution"
+                eval "sudo mkdir -p ${copyDestDir}/attribution; sudo ${CP_COMMAND} ${attributionDir}/* ${copyDestDir}/attribution"
+                RET=$?
+                if [[ $RET -ne 0 ]]
+                then
+                    echo "Error: Copying directory '${attributionDir}/*' failed."
+                    exit $RET
+                elif [[ "${copyAttr}" == "1" ]]; then
+                    echo "====> Copying directory ${attributionDir} contents to ${DOCKER_HOME_SCRIPTS}/attribution"
+                    eval "sudo ${CP_COMMAND} ${attributionDir}/* ${DOCKER_HOME_SCRIPTS}/attribution"
+                fi
+
+                RET=$?
+                if [[ $RET -ne 0 ]]
+                then
+                    echo "Error: Removing directory '${DIR}/attribution' failed."
+                    exit $RET
+                fi
+            done
+
+            # Next copy the performance monitor XML files to a temp location if any exist
+            servicePerfDir=`find ${DIR} -type d -name perf_monitor_contrib 2>/dev/null`
+            if [[ "${servicePerfDir}" != "" ]]; then
+                echo "====> Copying performance monitor XML files from directory ${servicePerfDir} contents to ${perfMonTemp}"
+                eval "sudo mkdir -p ${perfMonTemp}; sudo ${CP_COMMAND} ${servicePerfDir}/* ${perfMonTemp}"
+                RET=$?
+                if [[ $RET -ne 0 ]]
+                then
+                    echo "Error: Copying performance monitor files '${servicePerfDir}/*' failed."
+                    exit $RET
+                fi
+            fi
+
+            # Next copy the ansible files to where they need to go
+            playbooksDir=`find $DIR -name playbooks -type d`
+            if [[ -d "${playbooksDir}" ]]; then
+                echo "====> Copying ansible files from directory ${playbooksDir} contents to ${DOCKER_HOME_SCRIPTS}/playbooks"
+                eval "sudo ${CP_COMMAND} ${playbooksDir}/* ${DOCKER_HOME_SCRIPTS}/playbooks"
+                RET=$?
+                if [[ $RET -ne 0 ]]
+                then
+                    echo "Error: Copying ansible files '${playbooksDir}/*' failed."
+                    exit $RET
+                fi
+            fi
+
+            # take care of special case for core playbooks folder - don't process that as it is already copied
+            if [[ ! -d ${DIR}/playbooks/roles ]]; then
+                for rolesDir in `find $DIR -name roles -type d`
+                do
+                    echo "====> Copying ansible roles files from directory ${rolesDir} contents to ${DOCKER_HOME_SCRIPTS}/playbooks/roles"
+                    eval "sudo ${CP_COMMAND} ${rolesDir}/* ${DOCKER_HOME_SCRIPTS}/playbooks/roles"
+                    RET=$?
+                    if [[ $RET -ne 0 ]]
+                    then
+                        echo "Error: Copying ansible files '${rolesDir}/*' failed."
+                        exit $RET
+                    fi
+                done
+            fi
+
+            # take care of any documentation which needs to be copied
+            if [[ ! -d ${DIR}/docs ]]; then
+                for docDir in `find $DIR -name docs -type d`
+                do
+                    echo "====> Copying documentation files from directory ${docDir} contents to ${DOCKER_HOME_SCRIPTS}/docs"
+                    eval "sudo ${CP_COMMAND} ${docDir}/* ${DOCKER_HOME_SCRIPTS}/docs"
+                    RET=$?
+                    if [[ $RET -ne 0 ]]
+                    then
+                        echo "Error: Copying documentation files '${docDir}/*' failed."
+                        exit $RET
+                    fi
+                done
+            fi
+
+            # Hack for certificates in some of the component packages
+            # This is as generic as we can get....
+            if [[ -d ${DIR}/ELK/curator ]]; then
+                echo "====> Copying ELK curator files to ${DOCKER_HOME_SCRIPTS}/certificates/ELK/curator"
+                eval "sudo ${CP_COMMAND} ${DIR}/ELK/curator/* ${DOCKER_HOME_SCRIPTS}/certificates/ELK/curator"
+                RET=$?
+                if [[ $RET -ne 0 ]]
+                then
+                    echo "Error: Copying ELK curator files '${DIR}/ELK/curator/*' failed."
+                    exit $RET
+                fi
+            fi
+            if [[ -d ${DIR}/ELK/ldap-config ]]; then
+                echo "====> Copying ELK ldap-config files to ${DOCKER_HOME_SCRIPTS}/certificates/ELK/ldap-config"
+                eval "sudo ${CP_COMMAND} ${DIR}/ELK/ldap-config/* ${DOCKER_HOME_SCRIPTS}/certificates/ELK/ldap-config"
+                RET=$?
+                if [[ $RET -ne 0 ]]
+                then
+                    echo "Error: Copying ELK ldap-config files '${DIR}/ELK/ldap-config/*' failed."
+                    exit $RET
+                fi
+            fi
+            if [[ -d ${DIR}/ELK/logstash-config ]]; then
+                echo "====> Copying ELK logstash-config files to ${DOCKER_HOME_SCRIPTS}/certificates/ELK/logstash-config"
+                eval "sudo ${CP_COMMAND} ${DIR}/ELK/logstash-config/* ${DOCKER_HOME_SCRIPTS}/certificates/ELK/logstash-config"
+                RET=$?
+                if [[ $RET -ne 0 ]]
+                then
+                    echo "Error: Copying ELK logstash-config files '${DIR}/ELK/logstash-config/*' failed."
+                    exit $RET
+                fi
+            fi
+            if [[ -d ${DIR}/ELK/certs_install ]]; then
+                echo "====> Copying ELK certs_install files to ${DOCKER_HOME_SCRIPTS}/certificates/ELK/install"
+                eval "sudo ${CP_COMMAND} ${DIR}/ELK/certs_install/* ${DOCKER_HOME_SCRIPTS}/certificates/ELK/install"
+                RET=$?
+                if [[ $RET -ne 0 ]]
+                then
+                    echo "Error: Copying ELK certs_install files '${DIR}/ELK/certs_install/*' failed."
+                    exit $RET
+                fi
+            fi
+            if [[ -d ${DIR}/LSF/conf ]]; then
+                echo "====> Copying LSF conf files to ${DOCKER_HOME_SCRIPTS}/certificates/LSF/conf"
+                eval "sudo ${CP_COMMAND} ${DIR}/LSF/conf/* ${DOCKER_HOME_SCRIPTS}/certificates/LSF/conf"
+                RET=$?
+                if [[ $RET -ne 0 ]]
+                then
+                    echo "Error: Copying LSF conf files '${DIR}/LSF/conf/*' failed."
+                    exit $RET
+                fi
+            fi
+            if [[ -d ${DIR}/LSF/certs_install ]]; then
+                echo "====> Copying LSF certs_install files to ${DOCKER_HOME_SCRIPTS}/certificates/LSF/install"
+                eval "sudo ${CP_COMMAND} ${DIR}/LSF/certs_install/* ${DOCKER_HOME_SCRIPTS}/certificates/LSF/install"
+                RET=$?
+                if [[ $RET -ne 0 ]]
+                then
+                    echo "Error: Copying LSF certs_install files '${DIR}/LSF/certs_install/*' failed."
+                    exit $RET
+                fi
+            fi
+            if [[ -d ${DIR}/acp_api/certs_install ]]; then
+                echo "====> Copying ACP API certs_install files to ${DOCKER_HOME_SCRIPTS}/certificates/ACPAPI/install"
+                eval "sudo ${CP_COMMAND} ${DIR}/acp_api/certs_install/* ${DOCKER_HOME_SCRIPTS}/certificates/ACPAPI/install"
+                RET=$?
+                if [[ $RET -ne 0 ]]
+                then
+                    echo "Error: Copying LSF certs_install files '${DIR}/acp_api/certs_install/*' failed."
+                    exit $RET
+                fi
+            fi
+            if [[ -d ${DIR}/advisorServer/conf ]]; then
+                echo "====> Copying advisorServer conf files to ${DOCKER_HOME_SCRIPTS}/certificates/advisorServer/conf"
+                eval "sudo ${CP_COMMAND} ${DIR}/advisorServer/conf/* ${DOCKER_HOME_SCRIPTS}/certificates/advisorServer/conf"
+                RET=$?
+                if [[ $RET -ne 0 ]]
+                then
+                    echo "Error: Copying advisorServer conf files '${DIR}/advisorServer/conf/*' failed."
+                    exit $RET
+                fi
+            fi
+            if [[ -d ${DIR}/advisorServer/keys ]]; then
+                echo "====> Copying advisorServer keys files to ${DOCKER_HOME_SCRIPTS}/certificates/advisorServer/keys"
+                eval "sudo ${CP_COMMAND} ${DIR}/advisorServer/keys/* ${DOCKER_HOME_SCRIPTS}/certificates/advisorServer/keys"
+                RET=$?
+                if [[ $RET -ne 0 ]]
+                then
+                    echo "Error: Copying advisorServer keys files '${DIR}/advisorServer/keys/*' failed."
+                    exit $RET
+                fi
+            fi
+            if [[ -d ${DIR}/appObserver/conf ]]; then
+                echo "====> Copying appObserver conf files to ${DOCKER_HOME_SCRIPTS}/certificates/appObserver/conf"
+                eval "sudo ${CP_COMMAND} ${DIR}/appObserver/conf/* ${DOCKER_HOME_SCRIPTS}/certificates/appObserver/conf"
+                RET=$?
+                if [[ $RET -ne 0 ]]
+                then
+                    echo "Error: Copying appObserver conf files '${DIR}/appObserver/conf/*' failed."
+                    exit $RET
+                fi
+            fi
+            if [[ -d ${DIR}/appObserver/certs_install ]]; then
+                echo "====> Copying appObserver certs_install files to ${DOCKER_HOME_SCRIPTS}/certificates/appObserver/install"
+                eval "sudo ${CP_COMMAND} ${DIR}/appObserver/certs_install/* ${DOCKER_HOME_SCRIPTS}/certificates/appObserver/install"
+                RET=$?
+                if [[ $RET -ne 0 ]]
+                then
+                    echo "Error: Copying appObserver certs_install files '${DIR}/appObserver/certs_install/*' failed."
+                    exit $RET
+                fi
+            fi
+
+            # Now copy deployment scripts to proper destination
+            echo "====> Copying directory ${DIR} content to ${copyDestDir}"
+            eval "cd ${DIR}; sudo ${CP_COMMAND} * ${copyDestDir}; cd .."
+            RET=$?
+            if [[ $RET -ne 0 ]]
+            then
+                echo "Error: Copying directory '${DIR}' content failed."
+                exit $RET
+            fi
+        fi
+    done
+}
+
+# For each ZIP file, unzip it and process the contents
+for ZIP_FILE in ${fileList[*]}
+do
+    SVCZIP_NAME=`echo ${ZIP_FILE} | sed -e "s/-[0-9].*//"`
+    SVCZIP_VERSION=`echo ${ZIP_FILE} | sed -e "s/.*-//" | sed -e "s/.zip//"`
+    echo "          Processing Service: ${SVCZIP_NAME}"
+    echo "          Service Version: ${SVCZIP_VERSION}"
+    # Create the work directory, go there and remove any garbage already there
+    eval "sudo mkdir -p work; cd work; sudo rm -rf *"
+    RET=$?
+    if [[ $RET -ne 0 ]]
+    then
+        echo "Error: Unable to create/clean work directory."
+        exit $RET
+    fi
+
+    # Unzip the file
+    echo "==> Unzipping ${ZIP_FILE} into work directory"
+    eval "sudo unzip ../${ZIP_FILE}"
+    RET=$?
+    if [[ $RET -ne 0 ]]
+    then
+        echo "Error: Unable to unzip ${ZIP_FILE}."
+        exit $RET
+    fi
+
+    # See if there is a service.json file and contniue based upon whether a service is being installed
+    if [[ -e service.json ]]; then
+        # Get service root dir and version from metafile
+        serviceVersion=`jq '.[] | {version: .serviceVersion}' -c service.json   | sed 's/.*"\(.*\)".*/\1/'`
+        serviceRootDir=`jq '.[] | {rootDir: .serviceName}' -c service.json   | sed 's/.*"\(.*\)".*/\1/'`
+
+        # Build installation structure, fix permissions and copy service metafile there
+        eval "sudo mkdir -p ${DOCKER_HOME_SCRIPTS}/${serviceRootDir}/${serviceVersion}"
+        eval "sudo chmod 777 ${DOCKER_HOME_SCRIPTS}/${serviceRootDir}"
+        eval "sudo chmod 777 ${DOCKER_HOME_SCRIPTS}/${serviceRootDir}/${serviceVersion}"
+        eval "sudo cp service.json ${DOCKER_HOME_SCRIPTS}/${serviceRootDir}/${serviceVersion}"
+
+        # Process IT files if any exist
+        if [[ -d IT ]]; then
+            echo "Copying integration tests to destination locations"
+            eval "sudo ${CP_COMMAND} IT ${DOCKER_HOME_SCRIPTS}/${serviceRootDir}/${serviceVersion}"
+            eval "sudo cp IT/* ${DOCKER_HOME_SCRIPTS}/playbooks/IT"
+        fi
+
+        # Process playbooks files if any exist
+        if [[ -d playbooks ]]; then
+            echo "Copying playbooks to destination locations"
+            eval "sudo ${CP_COMMAND} playbooks ${DOCKER_HOME_SCRIPTS}/${serviceRootDir}/${serviceVersion}"
+            eval "sudo ${CP_COMMAND} playbooks/* ${DOCKER_HOME_SCRIPTS}/playbooks"
+        fi
+
+        # Process attribution files if any exist
+        if [[ -d attribution ]]; then
+            echo "Copying attribution files to destination locations"
+            eval "sudo ${CP_COMMAND} attribution ${DOCKER_HOME_SCRIPTS}/${serviceRootDir}/${serviceVersion}"
+            eval "sudo cp attribution/* ${DOCKER_HOME_SCRIPTS}/attribution"
+        fi
+
+        # Process Document files if any exist
+        if [[ -d docs ]]; then
+            echo "Copying documents to destination locations"
+            eval "sudo ${CP_COMMAND} docs ${DOCKER_HOME_SCRIPTS}/${serviceRootDir}/${serviceVersion}"
+            eval "sudo cp docs/* ${DOCKER_HOME_SCRIPTS}/docs"
+        fi
+
+        # Update the service version entry for the product
+        updateServiceVersion ${serviceRootDir} ${serviceVersion}
+        copyAttribution=1
+
+        # Load the docker image into Cache using docker load
+        CURR_WORK_DIR=$PWD
+        for COMPONENT_FILE in *.zip
+        do
+            echo "====> Processing component ZIP file: ${COMPONENT_FILE}"
+            installComponentFile ${COMPONENT_FILE} ${DOCKER_HOME_SCRIPTS}/${serviceRootDir}/${serviceVersion} ${copyAttribution}
+            cd ${CURR_WORK_DIR}
+        done
+    fi
+
+    # Go back to starting directory
+    cd ${CURR_DIR}
+done
+
+# Make sure shell scripts have execute permissions
+echo "Ensuring playbook/certificate scripts have execute permissions"
+eval "sudo find ${DOCKER_HOME_SCRIPTS}/playbooks -name \"*.sh\" -exec chmod a+x {} \\;"
+eval "sudo find ${DOCKER_HOME_SCRIPTS}/certificates -name \"*.sh\" -exec chmod a+x {} \\;"
+
+# Move performance monitor files to production location
+if [[ -e ${perfMonTemp} ]]; then
+    # Have a version file
+    if [[ -e "${DOCKER_HOME_SCRIPTS}/monaas"  ]]; then
+        if [[ -e "${DOCKER_HOME_SCRIPTS}/monaas/perfMonitorContrib" ]]; then
+            # Have an existing core installation, copy file to the existing directory
+            eval "sudo cp ${perfMonTemp}/* ${DOCKER_HOME_SCRIPTS}/monaas/perfMonitorContrib"
+        else
+            # Move the work directory to the production location
+            eval "sudo mv ${perfMonTemp} ${DOCKER_HOME_SCRIPTS}/monaas/perfMonitorContrib"
+        fi
+    else
+        # Make and move the work directory to the production location
+        eval "sudo mkdir -p ${DOCKER_HOME_SCRIPTS}/monaas; sudo mv ${perfMonTemp} ${DOCKER_HOME_SCRIPTS}/monaas/perfMonitorContrib"
+    fi
+fi
+

@@ -1,0 +1,12 @@
+---
+- name: Reboot nodes
+  hosts: acp
+  sudo: yes
+  gather_facts: false
+
+  tasks:
+    - name: reboot
+      command: reboot
+    - name: wait for nodes
+      wait_for: host={{ inventory_hostname }} port=22
+      delegate_to: localhost

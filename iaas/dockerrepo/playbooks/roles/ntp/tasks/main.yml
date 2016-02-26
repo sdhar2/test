@@ -1,0 +1,46 @@
+---
+- name: ntpdate pkg installed
+  command: rpm -q ntpdate
+  tags: ntp
+- name: ntpdate service running
+  service: name=ntpdate enabled=yes
+  tags: ntp
+- name: ntp pkg installed
+  command: rpm -q ntp
+  tags: ntp
+- name: set the ntp.conf
+  lineinfile: dest=/etc/ntp.conf line="server {{ item }} burst iburst minpoll 4"
+  with_items: groups.ntp
+  tags: ntp
+- name: reload systemctl daemon
+  command: systemctl --type=service daemon-reload
+  when: is_sysctl
+  tags: docker
+- name: restart ntpd
+  service: name=ntpd state=restarted enabled=yes
+  tags: ntp
+- wait_for: timeout=60
+- name: verify ntp sync to listed hosts
+  shell: /usr/sbin/ntpdc -pn | grep "{{ item }}" | wc -l
+  with_items: groups.ntp
+  register: ntpd_sync
+  tags: ntp
+- name: validate ntp sync to listed hosts
+  debug:
+    msg: "The command ({{ item.cmd }}) did not find an entry {{ item.stdout}} {{ ntpd_sync.results}}"
+  when: item.stdout != "1"
+  with_items: "{{ntpd_sync.results}}"
+
+- name: set the start-state for service ntpd
+  shell: chkconfig --level 12345 ntpd on
+  when: is_service
+  tags: ntp
+
+- name: set the start-state for sysctl ntpd
+  shell: systemctl disable chronyd.service
+  when: is_sysctl
+  tags: ntp
+- name: set the start-state for sysctl ntpd
+  shell: systemctl enable ntpd
+  when: is_sysctl
+  tags: ntp
