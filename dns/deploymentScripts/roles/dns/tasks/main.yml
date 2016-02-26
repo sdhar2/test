@@ -1,0 +1,74 @@
+---
+
+    - shell : echo "/home/docker/cloud-service-scripts/playbooks/roles/dns/files"
+      register : search_dir
+    - debug: msg="the search_dir is {{ search_dir.stdout }}"
+
+    - shell : find {{ search_dir.stdout }} -type f -name "*dns*.tar" | xargs basename
+      register : bind_dns_tarfile_basename
+
+    - debug: msg="the bind tar filename basename name is {{ bind_dns_tarfile_basename.stdout }}"
+
+    - shell : find {{ search_dir.stdout }} -type f -name "*dns*.tar" 
+      register : bind_dns_tarfile_fullname
+
+    - debug: msg="the bind tar filename name is {{ bind_dns_tarfile_fullname.stdout }}"
+
+    - name: load the dns tar ball
+      command: docker load --input {{ bind_dns_tarfile_fullname.stdout }}
+
+    # get image info from tar
+    - shell : find {{ search_dir.stdout }} -type f -name "*.tar" | xargs basename | awk  -F'_' '{print $1"/"$2":"$3}' | awk '{print substr($0,0,(length($0)-4))}'
+
+      register : docker_dns_image
+    - debug: msg="the docker_dns_image is {{ docker_dns_image.stdout }} "
+
+    - name: Create directory for compose file
+      file: path=/arris/compose state=directory mode=0755
+      ignore_errors: yes
+ 
+    - name: copy the dns compose file
+      copy: src=bind-dns-compose.yml.tmpl dest=/arris/compose/bind-dns-compose.yml mode=0664
+
+    - name: update the docker image in compose file
+      # use # rather than / in sed command since the repalce string contains slashs
+      command: sed -i "s#DOCKER_IMAGE_MACRO#{{docker_dns_image.stdout}}#g" /arris/compose/bind-dns-compose.yml
+
+    - name: Create directory to persist dns webmin data
+      file: path=/dns_persist/etc/webmin/bind8 state=directory mode=0755
+      ignore_errors: yes
+ 
+    - name: Create directory to persist dns bind data
+      file: path=/dns_persist/var/named state=directory mode=0755
+      ignore_errors: yes
+
+    - name: copy the ACP VIP definitions file
+      copy: src=acp_vip_definitions dest=/dns_persist/var/named/acp_vip_definitions mode=0777
+    
+    - name: copy default named.conf
+      copy: src=named.conf dest=/dns_persist/etc/named.conf mode=0777
+
+    - name: copy default resolv.conf
+      copy: src=resolv.conf.tmpl dest=/etc/resolv.conf mode=0777
+     
+    - name: ensure that /etc/resolv.conf exists for docker volume
+      file: path=/etc/resolv.conf state=touch mode=0644
+
+    - name: pass the password to compose file
+      shell: echo BIND_PASSWORD={{ BIND_PASSWORD }} > /arris/compose/.env_bind
+      no_log: True
+
+    - name: pass the password to compose file
+      shell: echo DNS_ZONE={{ DNS_ZONE }} >> /arris/compose/.env_bind
+      no_log: True
+    
+    #- name: copy the docker compose file
+      #copy: src=/home/docker/cloud-service-scripts/playbooks/roles/docker/files/{{ ansible_distribution|lower }}/{{ ansible_distribution_major_version }}/docker-compose dest=/usr/sbin/docker-compose mode=0755
+      #copy: src=/home/docker/cloud-service-scripts/playbooks/roles/docker/files/docker-compose dest=/usr/sbin/docker-compose mode=0755
+
+    - name: start the compose file
+      command: docker-compose -f /arris/compose/bind-dns-compose.yml up -d
+
+    - name: remove the password file
+      file: path=/arris/compose/.env_bind state=absent
+      ignore_errors: yes

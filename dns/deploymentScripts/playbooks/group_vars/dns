@@ -1,0 +1,3 @@
+---
+default_dns_zone: reo.internal.acp.arris.com
+ntp_server: dockerrepo

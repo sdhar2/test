@@ -1,0 +1,16 @@
+advisorserver         172.17.0.93
+dbaascluster          172.17.0.93
+dockerrepo            172.17.0.93
+elk                   172.17.0.93
+etcdcluster           172.17.0.93
+jitp                  172.17.0.93
+lbaas                 172.17.0.93
+lbaas-client          172.17.0.93
+lbaas-ext             172.17.0.93
+maas                  172.17.0.93
+management            172.17.0.93
+nss                   172.17.0.93
+ntp                   172.17.0.93
+controller            172.17.0.93
+ddbaascluster         172.17.0.93
+elk-ext               172.17.0.93

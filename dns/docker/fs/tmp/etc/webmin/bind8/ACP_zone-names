@@ -1,0 +1,8 @@
+base=/var/named
+version=3
+pidfile_config=/var/run/named/named.pid /run/named.pid
+zone_0=.	2	hint	*	named.ca
+pidfile=/var/run/named/named.pid
+zone_1=DNS_ZONE		6	master	*	/var/named/DNS_ZONE.hosts
+file_/etc/named.conf=1446680784
+no_chroot_config=0

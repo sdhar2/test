@@ -1,0 +1,14 @@
+# Sample Inventory file for ACP DNS Server deployment On a VM
+[dns1]
+#.#.#.#
+[dns2]
+#.#.#.#
+##########################################
+# Below are groups of nodes selecting how 
+# each service(s) is associated to a node.
+# Modifications below this point are not 
+# recommended
+##########################################  
+[dns:children]
+dns1
+dns2

@@ -1,0 +1,55 @@
+---
+- hosts: localhost
+  connection: local
+  tags:
+    - ssh
+    - common
+
+  tasks:
+    - name: create ~/.ssh dir
+      file: path=~/.ssh mode=0700 state=directory
+      tags: ssh
+
+    - name: create known_hosts
+      file: path=~/.ssh/known_hosts mode=0600 state=touch
+      tags: ssh
+
+    - set_fact:
+           dockerrepo_ip: "{{ ansible_default_ipv4.address }}"
+      tags:
+        - ssh
+        - common
+
+#old method
+#    - name: get sshhostkeys
+#      shell: ssh-keyscan `ansible -i inventory all --list-hosts` >> ~/.ssh/known_hosts
+
+- hosts: dns
+  gather_facts: false
+  tags: ssh
+  vars:
+    - khosts: ~/.ssh/known_hosts
+
+  tasks:
+    - name: check for local key
+      local_action: command grep {{ inventory_hostname }} {{ khosts }}
+      register: local
+      failed_when: local.rc >= 2
+      changed_when: local.rc == 1
+      tags: ssh
+
+    - name: get remote_key
+      local_action: command ssh-keyscan {{ inventory_hostname }}
+      register: remote
+      changed_when: local.rc == 1
+      tags: ssh
+
+    - name: remove old key
+      local_action: command ssh-keygen -q -v -R {{ inventory_hostname }}
+      when: local.stdout and ( local.stdout != remote.stdout )
+      tags: ssh
+
+    - name: save remote_key
+      local_action: shell echo " {{ remote.stdout }} " >> {{ khosts }}
+      when:  local.stdout != remote.stdout
+      tags: ssh

@@ -1,0 +1,19 @@
+---
+- name: Deploy DNS 
+  hosts: dns
+  sudo: yes
+  sudo_user: root
+
+  vars_prompt:
+     - name: "DNS_ZONE"
+       prompt: "Enter the DNS Zone name"
+       confirm: no
+       private: no
+
+     - name: "BIND_PASSWORD"
+       prompt: "Set password for bind dns/webmin"
+       confirm: yes
+       private: yes
+
+  roles:
+     - dns

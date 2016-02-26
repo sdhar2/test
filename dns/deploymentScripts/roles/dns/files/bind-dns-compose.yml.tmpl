@@ -1,0 +1,19 @@
+bind:
+  image: DOCKER_IMAGE_MACRO
+  restart: always
+  privileged: true
+  tty: true
+
+  env_file: /arris/compose/.env_bind
+
+  ports:
+    - 10000:10000
+    - 53:53/udp
+
+  volumes:
+    - /etc/resolv.conf:/etc/resolv.conf
+    - /dns_persist/etc/named.conf:/etc/named.conf
+    - /dns_persist/etc/webmin/bind8:/data/etc/webmin/bind8
+    - /dns_persist/var/named:/data/var/named
+    - /tmp/data:/data
+

@@ -1,0 +1,12 @@
+$ORIGIN .
+$TTL 38400      ; 10 hours 40 minutes
+DNS_ZONE	  IN      SOA     DNSServer. default.domain.com. (
+                        1435072032
+                        10800
+                        3600
+                        604800
+                        38400 )
+                        NS      DNSServer.
+$ORIGIN DNS_ZONE
+$TTL 99999999	; 165 weeks 2 days 9 hours 46 minutes 39 seconds
+
