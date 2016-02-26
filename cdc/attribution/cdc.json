@@ -1,0 +1,48 @@
+{
+    "ossAttribution": {
+        "product": "pgpool dbaas",
+        "productVersion": "1.3.0.10",
+        "entries": [
+            {
+                "component": "OpenSSH",
+                "componentVersion": "5.3p1-94",
+                "componentUrl": "",
+                "license": "Open SSL",
+                "licenseUrl": "licenses/openssh-license.txt",
+                "notice": ""
+            },
+            {
+                "component": "Expect",
+                "componentVersion": "5.44.1.15-5",
+                "componentUrl": "http://www.nist.gov/el/msid/expect.cfm",
+                "license": "Public Domain",
+                "licenseUrl": "",
+                "notice": ""
+            },
+            {
+                "component": "PHP 5",
+                "componentVersion": "5.3.3-27",
+                "componentUrl": "http://php.net",
+                "license": "PHP License 3.01",
+                "licenseUrl": "licenses/php-license.txt",
+                "notice": ""
+            },
+            {
+                "component": "PGPool",
+                "componentVersion": "3.3.3-1",
+                "componentUrl": "http://www.pgpool.net",
+                "license": "pgpool-II",
+                "licenseUrl": "licenses/pgpool-license.txt",
+                "notice": ""
+            },
+            {
+                "component": "curl",
+                "componentVersion": "7.19.7-37",
+                "componentUrl": "http://dev.mysql.com",
+                "license": "curl license",
+                "licenseUrl": "licenses/curl-license.txt",
+                "notice": ""
+            }
+        ]
+    }
+}

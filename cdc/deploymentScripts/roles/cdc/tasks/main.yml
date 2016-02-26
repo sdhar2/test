@@ -1,0 +1,58 @@
+---   
+    - name: Creates directory
+      file: path=/arris/compose state=directory mode=0755
+    - name: copy the code controller compose file
+      copy: src=cdc-compose.yml dest=/arris/compose/cdc-compose.yml mode=755
+    - name: look up the ELK DNS name
+      shell: nslookup elk | grep "elk" | awk '{ print $2}'
+      register: nslookup
+    - name: update ELK DNS name on compose file
+      command: sed -i "s/ELK_DNSNAME_MACRO/{{nslookup.stdout}}/g" /arris/compose/cdc-compose.yml
+    - name: update the host ip on compose file
+      command: sed -i "s/HOST_IP_MACRO/{{ansible_eth0.ipv4.address}}/g" /arris/compose/cdc-compose.yml
+    - name: update the host name on compose file
+      command: sed -i "s/HOST_NAME_MACRO/{{ansible_hostname}}/g" /arris/compose/cdc-compose.yml
+
+    - name: Grab iptables rules for survey of firewall (INPUT rules only)
+      shell: iptables -n --list INPUT
+      register: iptablesinputtablerules
+      always_run: yes
+    - name: punch the holes in the firewall
+      command: iptables -I INPUT -p tcp --dport {{ item }} -j ACCEPT
+      when: iptablesinputtablerules.stdout.find("dpt:{{ item }}") == -1
+      with_items:
+         - 8875
+         - 8877
+         - 7508
+         - 9087
+         - 4243
+      notify: save iptables
+    - name: kill the old status checker script if there is one
+      shell: killall cdc_status_checker.sh
+      ignore_errors: true
+    - name: start status checker script
+      shell: nohup /usr/sbin/cdc_status_checker.sh  &
+    - name: check if cdc docker container is running
+      shell: docker ps | grep compose_cdc_1
+      register: ps_result
+      ignore_errors: yes
+    - name: stop cdc docker container
+      shell: docker stop compose_cdc_1
+      when: ps_result.rc == 0
+      register: stop
+      changed_when: stop.stdout
+    - name: rm cdc docker container
+      shell: docker rm compose_cdc_1
+      when: ps_result.rc == 0 and stop.stdout
+      register: remove
+      changed_when: remove.stdout
+    - name: pass the password to compose file
+      shell: echo PASSWORD={{ PASSWORD }} > /arris/compose/.env 
+      no_log: true
+    - name: pull the docker images from compose file
+      command: docker-compose -f /arris/compose/cdc-compose.yml pull 
+    - name: start the compose file
+      command: docker-compose -f /arris/compose/cdc-compose.yml up -d
+    - name: remove the password file
+      file: path=/arris/compose/.env state=absent  
+      ignore_errors: yes

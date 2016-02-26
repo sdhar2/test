@@ -1,0 +1,16 @@
+[
+{
+	 "Static":
+	  [
+	    {
+		"key": "/config/advisor/codecontroller@$VarHostName",
+		"value": "$VarHostIP:8875"
+	    }
+	  ],
+	  "KeepAlive" :
+	  [
+	    {
+	    }
+	  ]
+	}
+] 

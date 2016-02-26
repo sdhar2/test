@@ -1,0 +1,108 @@
+cdc:
+  image: dockerrepo:5000/arrs/arrs-cloud-base-codecontroller:1.0.0.1
+  stdin_open: true
+  tty: true
+  restart: always
+  privileged: true
+  ports:
+  - "9087:9087"
+  log_driver: "json-file"
+  log_opt:
+   max-size: "100m"
+   max-file: "10"  
+  env_file: /arris/compose/.env
+  environment:
+  - LISTEN_PORT=9087
+  volumes:
+  - /sys/fs/cgroup:/sys/fs/cgroup:ro
+  - /var/opt/code_controller/logs:/opt/code_controller/logs
+  - /var/opt/code_controller/releases:/opt/code_controller/releases
+  - /var/opt/code_controller/deploy:/opt/code_controller/deploy
+  - /var/opt/code_controller/deploy/srdconfig:/opt/code_controller/public/srdconfig
+  - /var/opt/code_controller/deploy/srdconfig/nerve/config:/opt/code_controller/public/srdconfig/nerve/config
+  - /usr/bin:/usr/bin
+  - /usr/lib:/usr/lib
+  - /usr/lib64:/usr/lib64
+  - /home/fldengr:/home/fldengr
+  - /opt/etcd/config:/opt/etcd/config
+
+cdcapp:
+  image: dockerrepo:5000/arrs/arrs-cloud-base-cdc-app-monitor:1.0.0.0
+  stdin_open: true
+  tty: true
+  restart: always
+  privileged: true
+  ports:
+   - "7508:7508"
+  log_driver: "json-file"
+  log_opt:
+   max-size: "100m"
+   max-file: "10"   
+  environment:
+   LISTEN_PORT: 7508
+   APP_OBSERVER_PORT: 8877
+   HOST_IP: HOST_IP_MACRO
+   HOST_NAME: HOST_NAME_MACRO
+  volumes:
+   - /usr/sbin:/usr/local/sbin
+   - /var/log/app_monitor/cdc:/tmp
+   - /var/opt/app-monitor-cdc/status_monitor/logs:/opt/status_monitor/logs
+
+appObserverCdc:
+  image: dockerrepo:5000/arrs/arrs-cloud-base-app-observer:2.0.0.3
+  restart: always
+  privileged: true
+  ports:
+   - "8875:8875"
+   - "8877:8877"
+  log_driver: "json-file"
+  log_opt:
+   max-size: "100m"
+   max-file: "10"  
+  environment:
+   SECURE_PORT: 8875
+   NON_SECURE_PORT: 8877
+   PRODUCT_NAME: ACP-CDC
+   APP_WEBSERVICE_FQDN: HOST_IP_MACRO
+   APP_WEBSERVICE_PORT: 7508
+  volumes:
+   - /var/opt/app-observer-cdc/config:/opt/app-observer/conf/external
+   - /var/opt/app-observer-cdc/logs:/opt/app-observer/logs
+
+keymanager:
+  image: dockerrepo:5000/arrs/arrs-cloud-base-keymanager:1.0.0.9
+  stdin_open: true
+  tty: true
+  restart: always
+  privileged: true
+  log_driver: "json-file"
+  log_opt:
+   max-size: "100m"
+   max-file: "10"  
+  environment:
+  - HOST_IP=HOST_IP_MACRO
+  - HOST_NAME=HOST_NAME_MACRO
+  volumes:
+   - /var/log:/tmp
+   - /opt/etcd/config:/opt/etcd/config
+
+logstashforwarder:
+  image: dockerrepo:5000/arrs/arrs-cloud-base-logstash-forwarder:2.0.0.4
+  restart: always
+  privileged: true
+  log_driver: "json-file"
+  log_opt:
+   max-size: "100m"
+   max-file: "10"  
+  environment:
+   LS_HEAP_SIZE: 1g
+   CA_CERT_LOCATION: /etc/elk-keys/ca.pem
+   ES_HOST: ELK_DNSNAME_MACRO
+   NODE_NAME: HOST_IP_MACRO
+  volumes:
+   - /var/opt/logstash-forwarder/log:/var/log/supervisor
+   - /var/opt/logstash-forwarder/conf:/etc/logstash-forwarder
+   - /var/opt/logstash-forwarder/keys:/etc/elk-keys
+   - /etc/localtime:/etc/localtime:ro
+   - /var/opt/code_controller/logs:/opt/code_controller/logs
+

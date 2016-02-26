@@ -1,0 +1,9 @@
+[
+	{
+        "componentName":    "cdc",
+        "componentDescr":   "ARRIS Cloud Platform: Code Controller",
+        "containerName":    "arrs/arrs-cloud-base-codecontroller",
+        "componentVersion": "1.0.0.0",
+        "installFileBase":  "arrs-cloud-codecontroller"
+	}
+]

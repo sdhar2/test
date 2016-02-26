@@ -1,0 +1,13 @@
+---
+- name: Deploy Code Contoller service on dockerRepo VM 
+  hosts: cdc
+  sudo: true
+  sudo_user: root
+  
+  vars_prompt:
+   - name: "PASSWORD"
+     prompt: "Enter password for fldengr user"
+     private: yes
+     
+  roles:
+     - cdc
