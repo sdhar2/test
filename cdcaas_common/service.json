@@ -1,0 +1,20 @@
+[
+	{
+	 "serviceName" : "cdcaas",
+	 "serviceVersion": "1.0.6",
+	 "serviceReleaseArtifact": "cloud-platform-codecontroller",
+	 "releasedArtifacts":
+	  [
+	    {
+          	"arrs/arrs-cloud-base-codecontroller": "1.0.0.300",
+		"arrs/arrs-cloud-base-cdc-app-monitor": "1.0.0.1"
+  	    }
+	  ],
+	  "releaseDependency":
+	  [
+	    {
+ 		"paas" : "2.0.0"
+	    }
+	  ]
+	}
+] 

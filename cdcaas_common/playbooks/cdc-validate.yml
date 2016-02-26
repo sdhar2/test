@@ -1,0 +1,28 @@
+---
+- name: CDC validation
+  hosts: localhost
+  gather_facts: false
+  vars:
+    defaultDNSzone : "internal.acp.arris.com"
+    logMarker : "__ACP__"
+    inventoryFile : /home/docker/cloud-service-scripts/playbooks/inventory
+    jmeter_conf : /home/fldengr/jmeter/conf
+    jmeter_logs : /home/fldengr/jmeter/CDC_logs
+    jmeter_source : /home/docker/cloud-service-scripts/playbooks/IT
+    timestamp: "{{lookup('pipe','date +%Y%m%d%H%M%S')}}"
+    jmeter:
+      run_log_file: "{{ jmeter_logs }}/CDC_validation_run_{{ timestamp }}.log"
+      sampler_log_file: "{{ jmeter_logs }}/CDC_validation_sampler_{{ timestamp }}.log"
+      test_plan: "{{ jmeter_source }}/ACP_Validation_CDC.jmx"
+  tasks:
+    - name: deploy user.properties file
+      copy: src=/home/docker/cloud-service-scripts/playbooks/IT/user.properties dest=/opt/jmeter/apache-jmeter-2.13/bin/user.properties owner=fldengr group=fldengr  mode=0664
+      sudo: yes
+    - name: get host IP address
+      shell: hostname -i
+      register: dockerRepoNode
+    - name: create log directory
+      file: "path={{jmeter_logs}} state=directory mode=0755"
+
+    - name: run JMeter Validation
+      command: "/opt/jmeter/apache-jmeter-2.13/bin/jmeter -JdockerRepoNode={{ dockerRepoNode.stdout }} -JinventoryFile={{ inventoryFile }} -JdefaultDNSzone={{ defaultDNSzone }} -JLOGMARKER={{ logMarker }} -n -t {{ jmeter.test_plan }}  -j {{ jmeter.run_log_file }}"
